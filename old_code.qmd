@@ -1,0 +1,356 @@
+---
+title: "GIN_CRISPRCleanR"
+format: html
+---
+
+
+```{r}
+if (F) {
+  devtools::install_github("francescojm/CRISPRCleanR")
+}
+
+#library(CRISPRcleanR)
+library(data.table)
+library(ggplot2); theme_set(theme_light())
+library(purrr)
+library(stringr)
+
+map(c("TR.R.utils", "TR.bioinformatics"), ~ devtools::load_all(str_glue("D:/Promotion_projects_github/{.x}/")))
+
+cache_dir <- file.path("D:", "Promotion_cache", "GIN_paper_contribution"); dir.create(cache_dir, F, T)
+
+
+
+
+.fpath <- "D:/Promotion_databases/depmap/25Q2/"
+
+libs <- c("BROAD_Avana" = "Avana"#, "BROAD_Humagne" = "Humagne", "Sanger_KY" = "KY"
+)#[c(1, 3)]
+
+data <- libs |>
+  imap(~ {
+    
+    guideMap <- data.table::fread(
+      input = file.path(.fpath, str_glue("25Q2_{.x}GuideMap.csv")), 
+      select = c("UsedByChronos", "sgRNA", "Gene"))
+    
+    guideMap <- guideMap[(UsedByChronos)]
+    
+    LFC <- import_depmap(file.path(.fpath, str_glue("25Q2_{.x}LogfoldChange.csv")))
+    LFC <- LFC[intersect(rownames(LFC), guideMap[, get("sgRNA")]), setdiff(colnames(LFC), "Ishikawa")]
+    
+    sequenceMap <- fread(input = file.path(.fpath, "25Q2_ScreenSequenceMap.csv"), 
+                         select = c("SequenceID", "ModelID", "ModelConditionID", "Replicate", "Library"))
+    #sequenceMap[Library == "Humagne-CD", Library := "Humagne"]
+    sequenceMap <- sequenceMap[Library == .x & Replicate %in% c("A", "B")]
+    
+    # some cell lines appear multiple times
+    .cl <- sequenceMap[, .N, by = .(ModelID, Replicate)][N != 1, unique(get("ModelID"))]
+    sequenceMap[ModelID %in% .cl, ModelID := str_c(ModelID, "_", ModelConditionID)]
+    
+    cl_oi <- sequenceMap[SequenceID %in% colnames(LFC), 
+                         intersect(get("ModelID")[Replicate == "A"], 
+                                   get("ModelID")[Replicate == "B"])]
+    
+    cl_oi <- sequenceMap[ModelID %in% cl_oi & Replicate %in% c("A", "B"), get("SequenceID")]
+    
+    LFC <- LFC[,cl_oi]
+    
+    
+    .arr <- {
+      .x <- LFC |> melt_array_to_dt("sgRNA", "SequenceID") |> 
+        merge(guideMap[, .(sgRNA, Gene)], by = "sgRNA", all.x = T) # add guide-to-gene map
+      
+      .x[, n_guide := 1:.N, by = .(SequenceID, Gene)][, n_guide := as.character(n_guide)]
+      .x <- .x[n_guide %in% as.character(1:4)] |> 
+        merge(sequenceMap, by = "SequenceID") |> 
+        reshape2::acast(Gene ~ n_guide ~ Replicate ~ ModelID, value.var = "value")
+      .x} |> cacheR(fname = str_glue("LFC_array_{.y}"), dir = cache_dir)
+    
+    list(guideMap = guideMap, 
+         LFC = LFC, 
+         cl_oi = cl_oi, 
+         sequenceMap = sequenceMap, 
+         LFC_array = .arr)
+  })
+
+```
+
+
+
+
+
+
+
+
+
+
+```{r}
+.dx <- map(.arr, ~ .x[, .N, by = .(Gene, n_guide, ModelID, Replicate)])
+```
+
+
+```{r}
+.dx$BROAD_Avana[N != 1, unique(ModelID)]
+```
+
+```{r}
+.dxx <- fread("D:/Promotion_databases/depmap/25Q2/25Q2_ScreenSequenceMap.csv")
+
+.dxx[ModelID %in% c("ACH-000219", "ACH-003012", "ACH-000614")]
+```
+
+
+```{r}
+table(as.vector(.arr$BROAD_Avana))
+```
+
+```{r}
+ggplot(mapping = aes(as.vector(.arr$BROAD_Avana))) + geom_boxplot()
+```
+
+
+
+```{r}
+.dx <- .arr |> map(~ reshape2::acast(.x, Gene ~ n_guide ~ Replicate ~ ModelID, fill = NA_real_, fun.aggregate = mean, value.var = "value"))
+
+str(.dx)
+```
+
+
+
+```{r}
+
+
+data$BROAD_Avana$LFC[data$BROAD_Avana$guideMap[Gene == "AASDHPPT (60496)", get("sgRNA")],
+                     "KPL-1-311Cas9_RepA_p6_Avana-2"]
+```
+
+```{r}
+
+data$BROAD_Avana$screenSequenceMap[Replicate == "A" & ModelID == "ACH-000028"]
+
+
+
+
+```
+
+```{r}
+data$BROAD_Avana$LFC[1:20,c("SCC25-311Cas9_RepA_p6_Avana-3", "SCC25-311Cas9_RepB_p6_Avana-3")]
+```
+
+
+```{r}
+data$BROAD_Avana$screenSequenceMap[ModelID == "ACH-000188"]
+```
+
+
+
+```{r}
+.d4 <- flatten_array(.d3, c("gene", "guide", "replicate", "cell_line"), value.name = "LFC")
+```
+
+
+
+
+
+```{r}
+table(rownames(LFC$BROAD_Avana) %in% guideMap$BROAD_Avana$sgRNA)
+```
+```{r}
+
+
+```
+
+
+```{r}
+.d <- data.table(SequenceID = colnames(LFC$BROAD_Avana))
+
+.d <- .d |> merge(fread(file.path(.fpath, "25Q2_ScreenSequenceMap.csv")), by = "SequenceID", all.x = T)
+
+```
+
+
+
+
+
+```{r}
+str(.dx)
+
+apply(.dx, 1, na_perc)
+
+```
+
+
+```{r}
+
+.d <- fread(file.path(.fpath, "25Q2_ScreenSequenceMap.csv"))
+
+.d[, .N, by = Library]
+```
+
+```{r}
+table(colnames(LFC$BROAD_Avana) %in% .d$SequenceID)
+```
+
+
+
+
+
+
+
+```{r}
+
+guideMap |> map(~ .x[, .N, by = grepl("INTERGENIC", gene)])
+
+```
+
+```{r}
+
+```
+
+```{r}
+all(rownames(LFC) %in% guideMap[, sgRNA])
+```
+```{r}
+guideMap[gene == ""]
+```
+
+
+```{r}
+guideMap[(UsedByChronos), .N, by = gene][N > 4]
+
+!grepl("INTERGENIC", gene) & 
+  
+```
+
+```{r}
+guideMap[!grepl("INTERGENIC", gene), .N, by = gene][, .N, by = N]
+```
+
+
+```{r}
+.d <- set_names(guideMap[, unique(gene)[1:100]]) |> map(~ guideMap[gene == .x, unique(sgRNA)])
+
+str(.d)
+```
+
+
+
+
+# Import data
+
+```{r}
+load("D:/Promotion_project_data/GIN_data/CRISPRCleanR/libAnno.rda")
+setDT(libAnno)
+
+libAnno <- data.frame(
+  libAnno[, .(
+    CODE = str_c(GENE, "_guide_", 1:.N), 
+    GENES = GENE, 
+    EXONE = NA, 
+    CHRM = gsub("chr", "", CHROMOSOME), 
+    STRAND, 
+    STARTpos = START, 
+    ENDpos = STOP, 
+    seq = SEQUENCE), by = GENE])
+
+rownames(libAnno) <- libAnno[["CODE"]]
+
+head(libAnno)
+
+```
+
+
+# Load LFC
+
+```{r}
+load("D:/Promotion_project_data/GIN_data/CRISPRCleanR/fcGuides.rda")
+```
+
+
+# Run CRISPRcleanR
+
+
+```{r}
+
+skip <- c("USP10_013_min", "PTAR1_043_min") # cause problems
+
+screens_oi <- c("WT_022_min", "WDR73_125_min") # colnames(fcGuides)[1:50]
+
+screens_oi <- setdiff(screens_oi, skip)
+
+CCR <- list()
+stats <- list()
+
+for (.min.ngenes in c(3, 50)) { # minimal number of different genes that the set of sgRNAs within a region of estimated equal logFCs should target in order for their logFCs to be corrected
+  for (.min.width in c(2)) { # 1:5, minimum number of markers for a changed segment. Maximum possible value is set at 5.
+    
+    .n <- str_c("min.ngenes", .min.ngenes, "min.width", .min.width, sep = "_")
+    
+    .fpath <- file.path(cache_dir, str_c("CRISPRcleanR_results", .n, sep = "_")); dir.create(.fpath, F, T)
+    
+    for (.s in screens_oi) {
+      
+      CCR[[.n]][[.s]] <- ccr.logFCs2chromPos(
+        foldchanges = data.frame(sgRNA = libAnno[, "CODE"], gene = rownames(fcGuides), sapply(.s, \(.) {fcGuides[,.]}, simplify = F)), 
+        libraryAnnotation = libAnno) %>% 
+        ccr.GWclean(gwSortedFCs = ., 
+                    display = F, 
+                    label = .s, 
+                    min.ngenes = .min.ngenes, 
+                    min.width = .min.width, 
+                    verbose = 0) %>% cacheR(str_c("CCR_results", .n, .s, sep = "_"), .fpath)
+      
+      setDT(CCR[[.n]][[.s]]$segments)
+      setDT(CCR[[.n]][[.s]]$corrected_logFCs)
+      
+      stats[[str_glue("{.n}_{.s}")]] <- CCR[[.n]][[.s]]$corrected_logFCs[, .(screen = .s, 
+                                                                             min_ngenes = .min.ngenes, 
+                                                                             min_width = .min.width, 
+                                                                             reduced = sum(correction == -1, na.rm = T), 
+                                                                             increased = sum(correction == 1, na.rm = T), 
+                                                                             changed = sum(correction %in% c(-1, 1), na.rm = T), 
+                                                                             not_changed = sum(correction == 0, na.rm = T))]
+    }}}
+
+
+```
+
+```{r}
+CCR$min.ngenes_50_min.width_2$WT_022_min$corrected_logFCs[, .N, by = correction]
+```
+
+
+```{r}
+.d <- rbindlist(stats)
+.d[, perc_changed := (changed/not_changed)*100]
+.d %>% 
+  ggplot(aes(str_glue("{min_ngenes}_{min_width}"))) + 
+  geom_boxplot(aes(y = perc_changed))
+```
+
+# Observation on duplicated Chr15 region
+
+- ~330 gene duplicated region of `chr19` on the `chr15 p-arm`, 30 megabases (Mb), at 60-90 Mbp
+- specifically from position 61,105,000 to 89,890,000 on chromosome 15.
+
+
+```{r}
+CCR$min.ngenes_3_min.width_2$WT_022_min$segments[CHR == 15] %>% 
+  ggplot() + 
+  geom_segment(aes(x = startp, xend = endp, y = avg.logFC)) + 
+  geom_area(aes(x, y), data = data.table(x = c(61105000, 89890000), y = c(1, 1)), alpha = 0.3, fill = "orange")
+```
+
+```{r}
+CCR$min.ngenes_3_min.width_2$WT_022_min$corrected_logFCs[CHR == 15, .(pos = startp, genes, avgFC, correction, correctedFC)] %>% 
+  ggplot(aes(pos)) + 
+  geom_area(aes(x, y), alpha = 0.3, fill = "orange", data.table(x = c(61105000, 89890000), y = 1)) + 
+  #geom_point(aes(y = avgFC), color = "lightgrey") + 
+  #geom_point(aes(y = correctedFC)) + 
+  geom_point(aes(y = avgFC - correctedFC))
+```
+
+for each screen, find genes that are on shifted segments -> pair with query gene
+compare number of pairs
