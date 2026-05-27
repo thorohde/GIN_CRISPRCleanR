@@ -5,18 +5,76 @@ editor: visual
 ---
 
 
+```{r}
+library(CRISPRcleanR)
+library(data.table)
+library(ggplot2); theme_set(theme_light())
+library(purrr)
+library(stringr)
+library(targets)
+devtools::load_all("D:/Promotion_projects_github/TR.R.utils/")
+
+
+```
+
+
+
+```{r}
+tar_visnetwork(T)
+
+```
+
+
+
+```{r}
+tar_make()
+```
 
 
 
 
+# Import data
+
+```{r}
+for (.f in list.files("_targets/objects/")) {
+  tar_load(.f)
+}
+```
+
+
+```{r}
+str(CCR_stats_3_2)
+```
 
 
 
+```{r}
+stats <- list(data.table(data.frame(min_genes = 3, min_width = 2, rbindlist(CCR_stats$`3_2`))), 
+     data.table(data.frame(min_genes = 50, min_width = 3, rbindlist(CCR_stats$`50_2`)))) |>
+  rbindlist()
+
+stats[, perc_changed := (changed/not_changed)*100]
+
+stats |> 
+  ggplot(aes(min_ngenes)) + 
+  geom_boxplot(aes(y = perc_changed))
+
+```
+
+# Observation on duplicated Chr15 region
+
+- ~330 gene duplicated region of `chr19` on the `chr15 p-arm`, 30 megabases (Mb), at 60-90 Mbp
+- specifically from position 61,105,000 to 89,890,000 on chromosome 15.
 
 
+```{r}
 
+list.files("plots", full.names = T) |> knitr::include_graphics()
 
+```
 
+for each screen, find genes that are on shifted segments -> pair with query gene
+compare number of pairs
 
 
 
